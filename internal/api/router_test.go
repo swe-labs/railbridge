@@ -83,4 +83,28 @@ func TestAPI_HealthAndReady(t *testing.T) {
 	if len(bodyStr) < 200 {
 		t.Errorf("expected portal HTML content, got short body: %s", bodyStr)
 	}
+
+	// 4. Test /docs Portal
+	reqDocs := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	rrDocs := httptest.NewRecorder()
+	handler.ServeHTTP(rrDocs, reqDocs)
+
+	if rrDocs.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /docs, got %d", rrDocs.Code)
+	}
+	if ct := rrDocs.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("expected HTML Content-Type for /docs, got %s", ct)
+	}
+
+	// 5. Test /static/datastar.js
+	reqJS := httptest.NewRequest(http.MethodGet, "/static/datastar.js", nil)
+	rrJS := httptest.NewRecorder()
+	handler.ServeHTTP(rrJS, reqJS)
+
+	if rrJS.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /static/datastar.js, got %d", rrJS.Code)
+	}
+	if ct := rrJS.Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
+		t.Errorf("expected JS Content-Type for /static/datastar.js, got %s", ct)
+	}
 }

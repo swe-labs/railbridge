@@ -72,6 +72,11 @@ func (s *Server) registerRoutes() {
 	// Developer Gateway Portal & Landing Page (Root)
 	s.Mux.HandleFunc("GET /{$}", s.handlePortal)
 
+	// Interactive Documentation Hub & Datastar Live Console
+	s.Mux.HandleFunc("GET /docs", s.handleDocs)
+	s.Mux.HandleFunc("GET /docs/events", s.handleDocsEvents)
+	s.Mux.HandleFunc("GET /static/datastar.js", s.handleDatastarScript)
+
 	// Probes (Liveness and Database Readiness)
 	s.Mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.Mux.HandleFunc("GET /readyz", s.handleReadyz)

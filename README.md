@@ -7,14 +7,17 @@
 [![Architecture](<https://img.shields.io/badge/Architecture-Modular%20Monolith-2ea44f>)](#architecture)
 [![Database](<https://img.shields.io/badge/DB-PostgreSQL%20%7C%20SQLite-336791>)](https://www.postgresql.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](#license)
-[![Staging](https://img.shields.io/badge/Staging-railbridge.alwaysdata.net-orange)](https://railbridge.alwaysdata.net)
+[![Production](https://img.shields.io/badge/Live-railbridge.alwaysdata.net-success)](https://railbridge.alwaysdata.net)
+[![Interactive Docs](https://img.shields.io/badge/Docs-Datastar%20SSE%20Console-blue)](https://railbridge.alwaysdata.net/docs)
+[![Audit](https://img.shields.io/badge/Audit-Passed%20100%25-brightgreen)](docs/security-and-reliability-audit.md)
 
-**Railbridge** (`github.com/swe-labs/railbridge`) is an independent, tenant-agnostic transactional infrastructure rails server written in Go (Go 1.27.4+). It compiles into a single static binary and centralizes four essential operations behind an idempotent REST API:
+**Railbridge** (`github.com/swe-labs/railbridge`) is an independent, tenant-agnostic transactional infrastructure rails server written in Go (Go 1.27.4+). It compiles into a single static binary and centralizes essential operations behind an idempotent REST API and an embedded Datastar-powered developer hub:
 
-1. **Payment Orchestration:** Multi-channel mobile financial services (bKash, Nagad, Rocket) and card gateways with hosted checkouts, TrxID auto-matching, and replay protection.
-2. **Transactional SMS Dispatch:** Unified SMS gateway with phone number normalization (E.164), commercial provider routing, and an Android SIM gateway bridge for zero API-cost operations.
+1. **Payment Orchestration:** Multi-channel mobile financial services (bKash Send Money, Nagad, Rocket) with hosted checkouts, atomic row-level reconciliation (`SELECT ... FOR UPDATE`), TrxID auto-matching, and replay protection.
+2. **Transactional SMS Dispatch:** Unified SMS gateway with phone number normalization (E.164), commercial provider routing (Greenweb), and an automated fallback circuit breaker to an Android SIM gateway bridge for zero API-cost operations.
 3. **Transactional Email Pipeline:** Asynchronous queued email delivery with HTML template rendering, exponential backoff retries, and provider abstraction (SMTP, Resend, Brevo, Postmark).
 4. **Custom Domain Inbound Email Forwarding:** Virtual alias routing system (e.g., routing `business@swe-labs.com` to personal inboxes such as Gmail, Outlook, Proton Mail, or Yahoo) with an inbound webhook parser and delivery audit trail.
+5. **Interactive Developer Portal & Datastar SSE Hub (`/docs`):** In-binary documentation portal with an interactive API playground and live Server-Sent Events (SSE) telemetry feed.
 
 ---
 

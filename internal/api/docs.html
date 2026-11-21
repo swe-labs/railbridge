@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Railbridge Documentation &amp; Live Console</title>
+  <meta name="description" content="World-class documentation and real-time interactive console for Railbridge, powered by Datastar hypermedia.">
+  <script type="module" src="/static/datastar.js"></script>
+  <style>
+    :root {
+      --bg: #070b12;
+      --sidebar: #0b101b;
+      --card: #0f172a;
+      --card-hover: #131d35;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #0284c7;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #0284c7;
+      --primary-glow: rgba(2, 132, 199, 0.25);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --code-bg: #030712;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif; }
+    body { background-color: var(--bg); color: var(--text); line-height: 1.6; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* Top Navigation */
+    header { height: 4rem; border-bottom: 1px solid var(--border); background: var(--sidebar); display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; flex-shrink: 0; z-index: 40; }
+    .brand { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: var(--text); font-weight: 700; font-size: 1.15rem; }
+    .brand-pill { background: linear-gradient(135deg, #0284c7, #8b5cf6); color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; }
+    .header-links { display: flex; align-items: center; gap: 1rem; }
+    .header-link { color: var(--text-muted); text-decoration: none; font-size: 0.875rem; font-weight: 500; transition: color 0.15s; }
+    .header-link:hover { color: var(--text); }
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; }
+    .btn-primary { background: #0284c7; color: white; border-color: transparent; }
+    .btn-primary:hover { background: #0369a1; }
+    .btn-ghost { background: rgba(255, 255, 255, 0.04); color: var(--text); }
+    .btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+
+    /* Main Docs Layout */
+    .docs-layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* Sidebar Navigation */
+    aside { width: 280px; border-right: 1px solid var(--border); background: var(--sidebar); overflow-y: auto; padding: 1.5rem 1rem; flex-shrink: 0; }
+    .nav-group-title { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0.5rem 0.75rem; margin-top: 1rem; }
+    .nav-group-title:first-child { margin-top: 0; }
+    .doc-nav-item { display: block; padding: 0.5rem 0.75rem; border-radius: 6px; color: #cbd5e1; font-size: 0.875rem; text-decoration: none; font-weight: 500; transition: all 0.15s; margin-bottom: 2px; }
+    .doc-nav-item:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+    .doc-nav-item.active { background: rgba(2, 132, 199, 0.15); color: #38bdf8; font-weight: 600; }
+
+    /* Main Content Area */
+    main { flex: 1; overflow-y: auto; padding: 2.5rem 3rem; scroll-behavior: smooth; }
+    .content-container { max-width: 900px; margin: 0 auto; }
+    .doc-section { margin-bottom: 4rem; scroll-margin-top: 2rem; }
+    .doc-section h1 { font-size: 2.25rem; font-weight: 800; margin-bottom: 0.75rem; letter-spacing: -0.02em; }
+    .doc-section h2 { font-size: 1.6rem; font-weight: 700; margin: 2rem 0 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+    .doc-section h3 { font-size: 1.25rem; font-weight: 600; margin: 1.5rem 0 0.5rem; color: #38bdf8; }
+    .doc-section p { color: #cbd5e1; font-size: 1rem; margin-bottom: 1rem; line-height: 1.7; }
+    .callout { background: rgba(2, 132, 199, 0.08); border-left: 3px solid #0284c7; padding: 1rem 1.25rem; border-radius: 0 8px 8px 0; margin: 1.25rem 0; font-size: 0.925rem; color: #e2e8f0; }
+    .callout-success { background: rgba(16, 185, 129, 0.08); border-left-color: #10b981; }
+    .callout-warning { background: rgba(245, 158, 11, 0.08); border-left-color: #f59e0b; }
+
+    /* Code Blocks */
+    pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; overflow-x: auto; font-family: "JetBrains Mono", Consolas, monospace; font-size: 0.875rem; line-height: 1.6; margin: 1rem 0 1.5rem; color: #f8fafc; }
+    code { font-family: "JetBrains Mono", Consolas, monospace; background: rgba(255, 255, 255, 0.06); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85em; color: #38bdf8; }
+    pre code { background: transparent; padding: 0; color: inherit; }
+
+    /* Live Interactive Console Card */
+    .console-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; margin: 2rem 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4); }
+    .console-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+    .form-row { display: grid; grid-template-columns: 140px 1fr 100px; gap: 0.75rem; margin-bottom: 1rem; }
+    select, input, textarea { background: #070b12; border: 1px solid var(--border); color: white; padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 0.9rem; }
+    select:focus, input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+    .console-output-box { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #34d399; min-height: 120px; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
+
+    /* Real-Time Telemetry Stream (Datastar SSE) */
+    .telemetry-card { background: #090e1a; border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 10px; padding: 1.25rem; margin: 1.5rem 0; }
+    .telemetry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+    .stream-pill { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 700; color: #34d399; text-transform: uppercase; }
+    .stream-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; animation: blink 1.5s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+    .feed-list { display: flex; flex-direction: column; gap: 0.5rem; font-family: "JetBrains Mono", monospace; font-size: 0.8rem; }
+    .feed-item { padding: 0.4rem 0.6rem; border-radius: 4px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; }
+    .feed-time { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">
+      <span>Railbridge</span>
+      <span class="brand-pill">Docs &bull; Datastar SSE</span>
+    </a>
+    <div class="header-links">
+      <a href="/" class="header-link">&larr; Back to Portal</a>
+      <a href="/healthz" target="_blank" class="header-link">Healthz</a>
+      <a href="/readyz" target="_blank" class="header-link">Readyz</a>
+      <a href="https://github.com/swe-labs/railbridge" target="_blank" class="btn btn-ghost">GitHub</a>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside>
+      <div class="nav-group-title">Getting Started</div>
+      <a href="#overview" class="doc-nav-item active">Overview &amp; Contract</a>
+      <a href="#quickstart" class="doc-nav-item">60-Second Quickstart</a>
+      <a href="#go-sdk" class="doc-nav-item">Official Go SDK</a>
+
+      <div class="nav-group-title">Core Rails</div>
+      <a href="#mfs-rail" class="doc-nav-item">MFS Payment Rail</a>
+      <a href="#sms-rail" class="doc-nav-item">Transactional SMS</a>
+      <a href="#email-rail" class="doc-nav-item">Email Aliases &amp; MX</a>
+
+      <div class="nav-group-title">Architecture</div>
+      <a href="#concurrency" class="doc-nav-item">Atomic Reconciliation</a>
+      <a href="#outbox-dlq" class="doc-nav-item">Outbox &amp; DLQ</a>
+      <a href="#security" class="doc-nav-item">Security &amp; Rate Limits</a>
+
+      <div class="nav-group-title">Interactive Console</div>
+      <a href="#live-console" class="doc-nav-item">API Playground</a>
+      <a href="#live-telemetry" class="doc-nav-item">Live Event Stream</a>
+    </aside>
+
+    <main>
+      <div class="content-container">
+
+        <!-- 1. Overview -->
+        <section id="overview" class="doc-section">
+          <h1>Railbridge Documentation</h1>
+          <p>This documentation is for Go, Node.js, Python, and web developers who need to accept Bangladeshi Mobile Financial Services (bKash, Nagad, Rocket), dispatch transactional SMS, and route custom domain inbound emails without managing separate merchant gateway accounts or mailbox servers.</p>
+          
+          <div class="callout callout-success">
+            <strong>Reader Contract:</strong> After reading this guide, you will be able to create payment sessions, verify TrxIDs with atomic row-locking guarantees, dispatch SMS with automatic gateway failover, and inspect dead-letter webhooks.
+          </div>
+        </section>
+
+        <!-- 2. Quickstart -->
+        <section id="quickstart" class="doc-section">
+          <h2>60-Second Quickstart</h2>
+          <p>Railbridge compiles into a single, zero-dependency static Go binary. Run locally in SQLite WAL sandbox mode:</p>
+          <pre><code># Run in local sandbox mode with automatic SQLite WAL migrations
+git clone https://github.com/swe-labs/railbridge.git
+cd railbridge
+go run ./cmd/railbridge -dev</code></pre>
+          <p>Your local sandbox is provisioned with default test credentials:</p>
+          <ul>
+            <li>API Key: <code>rb_test_sandbox_secret_key_12345</code></li>
+            <li>Device Token: <code>rb_dev_sandbox_device_token_12345</code></li>
+            <li>Local Port: <code>http://localhost:8080</code></li>
+          </ul>
+        </section>
+
+        <!-- 3. Go SDK -->
+        <section id="go-sdk" class="doc-section">
+          <h2>Official Go Client SDK</h2>
+          <p>Railbridge includes an idiomatic, production-grade Go SDK in package <code>pkg/railbridge</code>:</p>
+          <pre><code>go get github.com/swe-labs/railbridge/pkg/railbridge</code></pre>
+          <h3>Example: Create Payment Session</h3>
+          <pre><code>package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/swe-labs/railbridge/pkg/railbridge"
+)
+
+func main() {
+    client := railbridge.NewClient("rb_live_YOUR_KEY", railbridge.WithBaseURL("https://railbridge.alwaysdata.net"))
+    
+    session, err := client.CreatePaymentSession(context.Background(), railbridge.CreateSessionRequest{
+        ExternalReferenceID: "INV-9021",
+        AmountMinor:         50000, // 500.00 BDT
+        Currency:            "BDT",
+        CustomerPhone:       "01712345678",
+        ReturnURL:           "https://your-app.com/checkout/complete",
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Session ID: %s\nCheckout URL: %s\n", session.ID, session.CheckoutURL)
+}</code></pre>
+        </section>
+
+        <!-- 4. MFS Payment Rail -->
+        <section id="mfs-rail" class="doc-section">
+          <h2>MFS Payment Rail</h2>
+          <p>The MFS rail automates bKash, Nagad, and Rocket verification. When a customer sends funds via Send Money, the Android SIM bridge detects the carrier SMS and matches it against the session.</p>
+          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/payments/sessions \
+  -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: ord_9921_init" \
+  -d '{
+    "external_reference_id": "ORD-9921",
+    "amount_minor": 15000,
+    "currency": "BDT",
+    "customer_phone": "01712345678",
+    "return_url": "https://store.example/success"
+  }'</code></pre>
+        </section>
+
+        <!-- 5. Transactional SMS Rail -->
+        <section id="sms-rail" class="doc-section">
+          <h2>Transactional SMS Rail</h2>
+          <p>Dispatches single or bulk SMS messages with dual-carrier resilience. Primary dispatch routes through Greenweb commercial gateway; if Greenweb returns errors or timeouts, the circuit breaker automatically switches to secondary Android SIM hardware.</p>
+          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/sms/messages \
+  -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "01812345678",
+    "message": "Your one-time passcode is 812903. Do not share this with anyone."
+  }'</code></pre>
+        </section>
+
+        <!-- 6. Inbound Email Rail -->
+        <section id="email-rail" class="doc-section">
+          <h2>Inbound Email Routing &amp; Aliases</h2>
+          <p>Create on-the-fly email aliases for your custom domain (e.g., <code>support@swe-labs.com</code>) that route straight to personal Gmail accounts with Sender Rewriting Scheme (SRS) preservation.</p>
+          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/emails/aliases \
+  -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_address": "billing@yourdomain.com",
+    "target_address": "founder@gmail.com"
+  }'</code></pre>
+        </section>
+
+        <!-- 7. Outbox & DLQ -->
+        <section id="outbox-dlq" class="doc-section">
+          <h2>Outbox Engine &amp; Dead-Letter Queue (DLQ)</h2>
+          <p>Webhooks are committed in the same database transaction as payment mutations. Retries execute with jittered exponential backoff ($1\text{s}, 2\text{s}, 4\text{s}, 8\text{s}, 16\text{s}, 32\text{s}$). After 6 failed attempts, jobs transition to <code>dead_letter</code> status.</p>
+          <h3>Inspect Dead-Letter Queue</h3>
+          <pre><code>curl -s -H "Authorization: Bearer rb_live_YOUR_KEY" \
+  https://railbridge.alwaysdata.net/v1/admin/outbox/dead-letter</code></pre>
+          <h3>Retry Dead-Letter Job</h3>
+          <pre><code>curl -s -X POST -H "Authorization: Bearer rb_live_YOUR_KEY" \
+  https://railbridge.alwaysdata.net/v1/admin/outbox/dead-letter/{job_id}/retry</code></pre>
+        </section>
+
+        <!-- 8. Interactive Live API Console (Datastar Powered) -->
+        <section id="live-console" class="doc-section">
+          <h2>Interactive API Playground</h2>
+          <p>Powered by Datastar hypermedia. Execute real or simulated queries directly from your browser:</p>
+          
+          <div class="console-card">
+            <div class="console-header">
+              <span style="font-weight: 700; font-size: 0.95rem;">Request Builder</span>
+              <span style="font-size: 0.8rem; color: #34d399;">Ready</span>
+            </div>
+
+            <div class="form-row">
+              <select id="console-method" onchange="updateConsoleFields()">
+                <option value="GET_HEALTHZ">GET /healthz</option>
+                <option value="GET_READYZ">GET /readyz</option>
+                <option value="GET_INFO">GET /v1/info</option>
+                <option value="GET_DLQ">GET /v1/admin/outbox/dead-letter</option>
+                <option value="POST_SESSION">POST /v1/payments/sessions</option>
+              </select>
+              <input type="text" id="console-url" value="/healthz" readonly>
+              <button class="btn btn-primary" id="btn-run" onclick="executeConsoleRequest()">Send Request</button>
+            </div>
+
+            <div id="console-payload-wrapper" style="display: none; margin-bottom: 1rem;">
+              <textarea id="console-payload" rows="3" style="width: 100%; font-family: monospace; font-size: 0.85rem;" placeholder="JSON Payload"></textarea>
+            </div>
+
+            <div class="console-output-box" id="console-response">Click "Send Request" to test endpoint...</div>
+          </div>
+        </section>
+
+        <!-- 9. Real-Time Telemetry Stream (Datastar SSE) -->
+        <section id="live-telemetry" class="doc-section">
+          <h2>Real-Time Telemetry Stream</h2>
+          <p>Live server-sent events stream connecting via Datastar SSE from <code>/docs/events</code>:</p>
+
+          <div class="telemetry-card" data-on-load="@get('/docs/events')">
+            <div class="telemetry-header">
+              <div class="stream-pill">
+                <span class="stream-dot"></span>
+                <span>Live Event Stream (SSE)</span>
+              </div>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Protocol: Datastar SSE</span>
+            </div>
+
+            <div class="feed-list" id="telemetry-stream">
+              <div class="feed-item">
+                <span style="color: #38bdf8;">[system] Subscribing to /docs/events telemetry stream...</span>
+                <span class="feed-time">Connecting</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function updateConsoleFields() {
+      const sel = document.getElementById('console-method').value;
+      const urlInput = document.getElementById('console-url');
+      const payloadWrap = document.getElementById('console-payload-wrapper');
+      const payloadInput = document.getElementById('console-payload');
+
+      if (sel === 'GET_HEALTHZ') {
+        urlInput.value = '/healthz';
+        payloadWrap.style.display = 'none';
+      } else if (sel === 'GET_READYZ') {
+        urlInput.value = '/readyz';
+        payloadWrap.style.display = 'none';
+      } else if (sel === 'GET_INFO') {
+        urlInput.value = '/v1/info';
+        payloadWrap.style.display = 'none';
+      } else if (sel === 'GET_DLQ') {
+        urlInput.value = '/v1/admin/outbox/dead-letter';
+        payloadWrap.style.display = 'none';
+      } else if (sel === 'POST_SESSION') {
+        urlInput.value = '/v1/payments/sessions';
+        payloadWrap.style.display = 'block';
+        payloadInput.value = JSON.stringify({
+          external_reference_id: "ORD-TEST-101",
+          amount_minor: 25000,
+          currency: "BDT",
+          customer_phone: "01712345678",
+          return_url: "https://example.com/success"
+        }, null, 2);
+      }
+    }
+
+    async function executeConsoleRequest() {
+      const sel = document.getElementById('console-method').value;
+      const url = document.getElementById('console-url').value;
+      const out = document.getElementById('console-response');
+      const btn = document.getElementById('btn-run');
+
+      btn.disabled = true;
+      btn.innerText = "Running...";
+      out.style.color = '#94a3b8';
+      out.innerText = "Sending HTTP request to " + url + "...";
+
+      const start = performance.now();
+      try {
+        let options = { method: 'GET' };
+        if (sel === 'POST_SESSION') {
+          options = {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer rb_test_sandbox_secret_key_12345'
+            },
+            body: document.getElementById('console-payload').value
+          };
+        } else if (sel === 'GET_DLQ') {
+          options.headers = { 'Authorization': 'Bearer rb_test_sandbox_secret_key_12345' };
+        }
+
+        const res = await fetch(url, options);
+        const duration = Math.round(performance.now() - start);
+        const data = await res.json();
+
+        out.style.color = res.ok ? '#34d399' : '#f87171';
+        out.innerText = "// HTTP " + res.status + " " + res.statusText + " (" + duration + " ms)\n" + JSON.stringify(data, null, 2);
+      } catch (err) {
+        out.style.color = '#ef4444';
+        out.innerText = "// Network error:\n" + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Send Request";
+      }
+    }
+
+    // Connect native EventSource fallback for telemetry feed if Datastar is initializing
+    const evtSource = new EventSource("/docs/events");
+    evtSource.onmessage = function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        const streamBox = document.getElementById("telemetry-stream");
+        if (streamBox) {
+          const div = document.createElement("div");
+          div.className = "feed-item";
+          div.innerHTML = "<span style=\"color:" + (data.level === 'warn' ? '#f59e0b' : '#38bdf8') + ";\">[" + data.type + "] " + data.message + "</span><span class=\"feed-time\">" + data.time + "</span>";
+          streamBox.prepend(div);
+          if (streamBox.children.length > 8) {
+            streamBox.removeChild(streamBox.lastChild);
+          }
+        }
+      } catch (_) {}
+    };
+  </script>
+</body>
+</html>
