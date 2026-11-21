@@ -803,7 +803,8 @@ func (db *DB) AtomicReconcileCustomerTrxID(ctx context.Context, tenantID, sessio
 	s.CreatedAt = createdAt.Time
 	s.UpdatedAt = updatedAt.Time
 	if s.Status == models.PaymentVerified {
-		return &s, true, nil
+		_ = tx.Rollback()
+		return &s, false, nil
 	}
 
 	// 2. Check if a matching SMS is buffered in mfs_unmatched_inbox

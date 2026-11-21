@@ -178,6 +178,16 @@ func (s *Server) handleVerifyPaymentSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if updatedSession.Status == models.PaymentVerified && !matched {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":      "verified",
+			"verified_at": updatedSession.VerifiedAt,
+			"session_id":  updatedSession.ID,
+			"message":     "Session is already verified",
+		})
+		return
+	}
+
 	if matched {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":         "verified",

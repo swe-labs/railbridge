@@ -69,6 +69,9 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) registerRoutes() {
+	// Developer Gateway Portal & Landing Page (Root)
+	s.Mux.HandleFunc("GET /{$}", s.handlePortal)
+
 	// Probes (Liveness and Database Readiness)
 	s.Mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.Mux.HandleFunc("GET /readyz", s.handleReadyz)

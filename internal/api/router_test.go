@@ -67,4 +67,20 @@ func TestAPI_HealthAndReady(t *testing.T) {
 	if readyResp["status"] != "ready" || readyResp["database"] != "connected" {
 		t.Errorf("unexpected readyz payload: %v", readyResp)
 	}
+
+	// 3. Test Root / Portal HTML
+	reqRoot := httptest.NewRequest(http.MethodGet, "/", nil)
+	rrRoot := httptest.NewRecorder()
+	handler.ServeHTTP(rrRoot, reqRoot)
+
+	if rrRoot.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from root /, got %d", rrRoot.Code)
+	}
+	if ct := rrRoot.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("expected HTML Content-Type, got %s", ct)
+	}
+	bodyStr := rrRoot.Body.String()
+	if len(bodyStr) < 200 {
+		t.Errorf("expected portal HTML content, got short body: %s", bodyStr)
+	}
 }

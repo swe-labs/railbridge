@@ -270,6 +270,17 @@ func (s *Server) handlePublicVerifyCheckout(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if updatedSession.Status == models.PaymentVerified && !matched {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":         "verified",
+			"session_id":     updatedSession.ID,
+			"transaction_id": updatedSession.TransactionID,
+			"verified_at":    updatedSession.VerifiedAt,
+			"message":        "Session is already verified",
+		})
+		return
+	}
+
 	if matched {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":         "verified",
