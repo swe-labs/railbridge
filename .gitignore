@@ -1,0 +1,30 @@
+# Compiled binaries
+/railbridge
+/railbridge.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local Development Data
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Configuration & Secrets
+.env
+.env.local
+.env.*.local
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test & Coverage artifacts
+coverage.out
+profile.pprof
