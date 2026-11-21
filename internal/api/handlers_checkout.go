@@ -2,10 +2,16 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
+	"time"
+
+	"github.com/swe-labs/railbridge/internal/models"
+	"github.com/swe-labs/railbridge/internal/store"
 )
 
 var checkoutHTMLTemplate = template.Must(template.New("checkout").Parse(`<!DOCTYPE html>
@@ -118,7 +124,7 @@ var checkoutHTMLTemplate = template.Must(template.New("checkout").Parse(`<!DOCTY
       msg.innerText = "";
 
       try {
-        const res = await fetch('/v1/payments/sessions/' + sessionID + '/verify', {
+        const res = await fetch('/checkout/' + sessionID + '/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ channel: currentChannel, transaction_id: trx, customer_phone: phone })
@@ -141,7 +147,7 @@ var checkoutHTMLTemplate = template.Must(template.New("checkout").Parse(`<!DOCTY
     function pollStatus() {
       const interval = setInterval(async () => {
         try {
-          const res = await fetch('/v1/payments/sessions/' + sessionID);
+          const res = await fetch('/checkout/' + sessionID + '/status');
           const data = await res.json();
           if (data.status === 'verified') {
             clearInterval(interval);
@@ -207,4 +213,107 @@ func (s *Server) handleHostedCheckout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = checkoutHTMLTemplate.Execute(w, data)
+}
+
+// handlePublicVerifyCheckout handles end-customer submission of TrxID on the public checkout page.
+func (s *Server) handlePublicVerifyCheckout(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "missing_parameter", "Session ID is required")
+		return
+	}
+
+	var req VerifyPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json_payload", "Malformed JSON request body")
+		return
+	}
+
+	cleanChannel := strings.ToLower(strings.TrimSpace(req.Channel))
+	cleanTrxID := strings.ToUpper(strings.TrimSpace(req.TransactionID))
+	cleanPhone := strings.TrimSpace(req.CustomerPhone)
+
+	if cleanChannel == "" || cleanTrxID == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "channel and transaction_id are required")
+		return
+	}
+
+	session, err := s.Store.GetPaymentSessionByID(r.Context(), sessionID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "session_not_found", "Payment session does not exist")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to retrieve payment session")
+		return
+	}
+
+	if session.Status == models.PaymentVerified {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":         "verified",
+			"session_id":     session.ID,
+			"transaction_id": session.TransactionID,
+			"verified_at":    session.VerifiedAt,
+			"message":        "Session is already verified",
+		})
+		return
+	}
+
+	if time.Now().UTC().After(session.ExpiresAt) {
+		writeError(w, http.StatusBadRequest, "session_expired", "Payment session has expired")
+		return
+	}
+
+	updatedSession, matched, err := s.Store.AtomicReconcileCustomerTrxID(r.Context(), session.TenantID, session.ID, cleanChannel, cleanTrxID, cleanPhone)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reconcile_error", "Failed to reconcile transaction: "+err.Error())
+		return
+	}
+
+	if matched {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":         "verified",
+			"session_id":     updatedSession.ID,
+			"transaction_id": cleanTrxID,
+			"verified_at":    updatedSession.VerifiedAt,
+			"matched_source": "inbox_buffer",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":         "processing",
+		"session_id":     updatedSession.ID,
+		"transaction_id": cleanTrxID,
+		"message":        "Transaction submitted. Awaiting automated telco verification.",
+	})
+}
+
+// handlePublicCheckoutStatus allows the hosted checkout page polling script to inspect verification progress.
+func (s *Server) handlePublicCheckoutStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "missing_parameter", "Session ID is required")
+		return
+	}
+
+	session, err := s.Store.GetPaymentSessionByID(r.Context(), sessionID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "session_not_found", "Payment session does not exist")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to retrieve payment session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":             session.ID,
+		"status":         session.Status,
+		"transaction_id": session.TransactionID,
+		"verified_at":    session.VerifiedAt,
+		"amount_minor":   session.AmountMinor,
+		"currency":       session.Currency,
+		"expires_at":     session.ExpiresAt,
+	})
 }

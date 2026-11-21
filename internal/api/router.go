@@ -21,6 +21,7 @@ type Server struct {
 	Mux          *http.ServeMux
 	SMSService   *sms.Service
 	EmailService *email.Service
+	RateLimiter  *MemoryRateLimiter
 }
 
 // NewServer constructs the HTTP server and registers core middleware and routes.
@@ -41,15 +42,25 @@ func NewServer(cfg *config.Config, st *store.DB, smsSvc *sms.Service, emailSvc *
 		emailSvc = email.NewService(st, emailDriver)
 	}
 
+	rl := NewMemoryRateLimiter(10 * time.Minute)
+
 	s := &Server{
 		Config:       cfg,
 		Store:        st,
 		Mux:          http.NewServeMux(),
 		SMSService:   smsSvc,
 		EmailService: emailSvc,
+		RateLimiter:  rl,
 	}
 	s.registerRoutes()
 	return s
+}
+
+// Close terminates background resources such as the rate limiter garbage collection routine.
+func (s *Server) Close() {
+	if s.RateLimiter != nil {
+		s.RateLimiter.Close()
+	}
 }
 
 // Handler returns the root http.Handler with production middleware applied.
@@ -82,8 +93,15 @@ func (s *Server) registerRoutes() {
 	s.Mux.HandleFunc("POST /v1/ingest/android-ping", s.DeviceAuthMiddleware(s.handleAndroidPing))
 	s.Mux.HandleFunc("POST /v1/ingest/android-sms", s.DeviceAuthMiddleware(s.handleIngestAndroidSMS))
 
-	// Hosted Checkout Multilingual UI
-	s.Mux.HandleFunc("GET /checkout/{id}", s.handleHostedCheckout)
+	// Hosted Checkout Endpoints (Rate Limited Public Endpoints)
+	s.Mux.HandleFunc("GET /checkout/{id}", s.PublicRateLimitMiddleware(60, s.handleHostedCheckout))
+	s.Mux.HandleFunc("POST /checkout/{id}/verify", s.PublicRateLimitMiddleware(30, s.handlePublicVerifyCheckout))
+	s.Mux.HandleFunc("GET /checkout/{id}/status", s.PublicRateLimitMiddleware(60, s.handlePublicCheckoutStatus))
+
+	// Dead-Letter Queue & Administrative Operations (Tenant Scoped)
+	s.Mux.HandleFunc("GET /v1/admin/outbox/dead-letter", s.TenantAuthMiddleware(s.handleListDeadLetterJobs))
+	s.Mux.HandleFunc("POST /v1/admin/outbox/dead-letter/{id}/retry", s.TenantAuthMiddleware(s.handleRetryDeadLetterJob))
+	s.Mux.HandleFunc("POST /v1/admin/maintenance/restart", s.TenantAuthMiddleware(s.handleAdminRestart))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

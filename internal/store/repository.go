@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/swe-labs/railbridge/internal/models"
@@ -62,19 +63,28 @@ func parseTime(val any) (time.Time, error) {
 	case time.Time:
 		return v, nil
 	case string:
+		str := strings.TrimSpace(v)
+		if idx := strings.Index(str, " m="); idx != -1 {
+			str = strings.TrimSpace(str[:idx])
+		}
 		layouts := []string{
-			"2006-01-02 15:04:05.999999999 -0700 MST",
 			"2006-01-02 15:04:05.999999999 -0700 -0700",
-			"2006-01-02 15:04:05 -0700 MST",
+			"2006-01-02 15:04:05.999999999 -0700 MST",
+			"2006-01-02 15:04:05.999999999 -0700 -07",
+			"2006-01-02 15:04:05.999999999 -0700",
+			"2006-01-02 15:04:05.999999999",
 			time.RFC3339Nano,
 			time.RFC3339,
 			"2006-01-02 15:04:05.999999999-07:00",
-			"2006-01-02 15:04:05.999999999",
+			"2006-01-02 15:04:05 -0700 -0700",
+			"2006-01-02 15:04:05 -0700 MST",
+			"2006-01-02 15:04:05 -0700 -07",
+			"2006-01-02 15:04:05 -0700",
 			"2006-01-02 15:04:05-07:00",
 			"2006-01-02 15:04:05",
 		}
 		for _, l := range layouts {
-			if t, err := time.Parse(l, v); err == nil {
+			if t, err := time.Parse(l, str); err == nil {
 				return t, nil
 			}
 		}
@@ -177,6 +187,8 @@ func (db *DB) CreatePaymentSession(ctx context.Context, s *models.PaymentSession
 	s.UpdatedAt = now
 	if s.ExpiresAt.IsZero() {
 		s.ExpiresAt = now.Add(30 * time.Minute)
+	} else {
+		s.ExpiresAt = s.ExpiresAt.UTC().Round(0)
 	}
 
 	metadataJSON, _ := json.Marshal(s.Metadata)
@@ -218,6 +230,22 @@ func (db *DB) GetPaymentSession(ctx context.Context, tenantID, id string) (*mode
 	}
 
 	return db.scanPaymentSession(db.QueryRowContext(ctx, query, tenantID, id))
+}
+
+// GetPaymentSessionByID retrieves a payment session by ID across tenants (used for public hosted checkout).
+func (db *DB) GetPaymentSessionByID(ctx context.Context, id string) (*models.PaymentSession, error) {
+	query := `SELECT id, tenant_id, external_reference_id, idempotency_key, amount_minor, currency,
+		status, channel, customer_phone, transaction_id, return_url, webhook_url_override, metadata,
+		expires_at, verified_at, created_at, updated_at
+		FROM payment_sessions WHERE id = ?`
+	if db.Dialect == "postgres" {
+		query = `SELECT id, tenant_id, external_reference_id, idempotency_key, amount_minor, currency,
+			status, channel, customer_phone, transaction_id, return_url, webhook_url_override, metadata,
+			expires_at, verified_at, created_at, updated_at
+			FROM payment_sessions WHERE id = $1`
+	}
+
+	return db.scanPaymentSession(db.QueryRowContext(ctx, query, id))
 }
 
 // GetPaymentSessionByIdempotency retrieves a session by tenant ID and idempotency key.
@@ -390,6 +418,8 @@ func (db *DB) SaveUnmatchedSMS(ctx context.Context, sms *models.MFSUnmatchedSMS)
 	sms.CreatedAt = now
 	if sms.ExpiresAt.IsZero() {
 		sms.ExpiresAt = now.Add(30 * time.Minute)
+	} else {
+		sms.ExpiresAt = sms.ExpiresAt.UTC().Round(0)
 	}
 
 	query := `INSERT INTO mfs_unmatched_inbox (
@@ -727,4 +757,319 @@ func GenerateRandomHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// AtomicReconcileCustomerTrxID executes atomic verification of customer-entered TrxID against buffered MFS SMS.
+// It wraps payment session locking, SMS buffer claiming, and webhook outbox queuing in a single atomic SQL transaction.
+func (db *DB) AtomicReconcileCustomerTrxID(ctx context.Context, tenantID, sessionID, channel, trxID, phone string) (*models.PaymentSession, bool, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("begin atomic reconcile tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 1. Fetch and lock payment session
+	sessionQuery := `SELECT id, tenant_id, external_reference_id, idempotency_key, amount_minor, currency,
+		status, channel, customer_phone, transaction_id, return_url, webhook_url_override, metadata,
+		expires_at, verified_at, created_at, updated_at
+		FROM payment_sessions WHERE id = ? AND tenant_id = ?`
+	if db.Dialect == "postgres" {
+		sessionQuery = `SELECT id, tenant_id, external_reference_id, idempotency_key, amount_minor, currency,
+			status, channel, customer_phone, transaction_id, return_url, webhook_url_override, metadata,
+			expires_at, verified_at, created_at, updated_at
+			FROM payment_sessions WHERE id = $1 AND tenant_id = $2 FOR UPDATE`
+	}
+
+	var s models.PaymentSession
+	var statusStr string
+	var idempKey, ch, custPhone, txID, whOverride, metaStr sql.NullString
+	var expiresAt, createdAt, updatedAt ScannableTime
+	var verifiedAt ScannableNullTime
+
+	err = tx.QueryRowContext(ctx, sessionQuery, sessionID, tenantID).Scan(
+		&s.ID, &s.TenantID, &s.ExternalReferenceID, &idempKey, &s.AmountMinor, &s.Currency,
+		&statusStr, &ch, &custPhone, &txID, &s.ReturnURL, &whOverride, &metaStr,
+		&expiresAt, &verifiedAt, &createdAt, &updatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, ErrNotFound
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("lock payment session: %w", err)
+	}
+
+	s.Status = models.PaymentStatus(statusStr)
+	s.ExpiresAt = expiresAt.Time
+	s.CreatedAt = createdAt.Time
+	s.UpdatedAt = updatedAt.Time
+	if s.Status == models.PaymentVerified {
+		return &s, true, nil
+	}
+
+	// 2. Check if a matching SMS is buffered in mfs_unmatched_inbox
+	now := time.Now().UTC()
+	smsQuery := `SELECT id, sender_phone FROM mfs_unmatched_inbox
+		WHERE tenant_id = ? AND channel = ? AND transaction_id = ? AND amount_minor = ? AND status = 'unmatched' AND expires_at > ?
+		ORDER BY created_at ASC LIMIT 1`
+	if db.Dialect == "postgres" {
+		smsQuery = `SELECT id, sender_phone FROM mfs_unmatched_inbox
+			WHERE tenant_id = $1 AND channel = $2 AND transaction_id = $3 AND amount_minor = $4 AND status = 'unmatched' AND expires_at > $5
+			ORDER BY created_at ASC LIMIT 1 FOR UPDATE`
+	}
+
+	var unmatchedID, senderPhone string
+	smsErr := tx.QueryRowContext(ctx, smsQuery, tenantID, channel, trxID, s.AmountMinor, now).Scan(&unmatchedID, &senderPhone)
+	if smsErr == nil {
+		// MATCH FOUND: Confirm payment session atomically
+		if phone == "" {
+			phone = senderPhone
+		}
+		updateSession := `UPDATE payment_sessions SET status = ?, channel = ?, transaction_id = ?, customer_phone = ?, verified_at = ?, updated_at = ? WHERE id = ?`
+		if db.Dialect == "postgres" {
+			updateSession = `UPDATE payment_sessions SET status = $1, channel = $2, transaction_id = $3, customer_phone = $4, verified_at = $5, updated_at = $6 WHERE id = $7`
+		}
+		if _, err := tx.ExecContext(ctx, updateSession, string(models.PaymentVerified), channel, trxID, phone, now, now, sessionID); err != nil {
+			return nil, false, fmt.Errorf("update session to verified: %w", err)
+		}
+
+		// Mark unmatched SMS as matched
+		updateSMS := `UPDATE mfs_unmatched_inbox SET status = 'matched', matched_session_id = ? WHERE id = ?`
+		if db.Dialect == "postgres" {
+			updateSMS = `UPDATE mfs_unmatched_inbox SET status = 'matched', matched_session_id = $1 WHERE id = $2`
+		}
+		if _, err := tx.ExecContext(ctx, updateSMS, sessionID, unmatchedID); err != nil {
+			return nil, false, fmt.Errorf("mark unmatched sms matched: %w", err)
+		}
+
+		// Enqueue outbox webhook event in the SAME transaction
+		webhookPayload, _ := json.Marshal(map[string]any{
+			"event":                 "payment.verified",
+			"session_id":            sessionID,
+			"external_reference_id": s.ExternalReferenceID,
+			"amount_minor":          s.AmountMinor,
+			"currency":              s.Currency,
+			"channel":               channel,
+			"transaction_id":        trxID,
+			"customer_phone":        phone,
+			"verified_at":           now,
+		})
+
+		jobID := GenerateUUID()
+		insertJob := `INSERT INTO outbox_jobs (id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, created_at, updated_at)
+			VALUES (?, ?, 'webhook', ?, 'pending', 0, 6, ?, ?, ?)`
+		if db.Dialect == "postgres" {
+			insertJob = `INSERT INTO outbox_jobs (id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, created_at, updated_at)
+				VALUES ($1, $2, 'webhook', $3, 'pending', 0, 6, $4, $5, $6)`
+		}
+		if _, err := tx.ExecContext(ctx, insertJob, jobID, tenantID, string(webhookPayload), now, now, now); err != nil {
+			return nil, false, fmt.Errorf("enqueue outbox job in tx: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return nil, false, fmt.Errorf("commit atomic reconcile: %w", err)
+		}
+
+		s.Status = models.PaymentVerified
+		s.Channel = channel
+		s.TransactionID = trxID
+		s.CustomerPhone = phone
+		s.VerifiedAt = &now
+		return &s, true, nil
+	}
+
+	// NO MATCH YET: Move session to 'processing' awaiting the incoming Android SIM SMS
+	updateProcessing := `UPDATE payment_sessions SET status = ?, channel = ?, transaction_id = ?, customer_phone = ?, updated_at = ? WHERE id = ?`
+	if db.Dialect == "postgres" {
+		updateProcessing = `UPDATE payment_sessions SET status = $1, channel = $2, transaction_id = $3, customer_phone = $4, updated_at = $5 WHERE id = $6`
+	}
+	if _, err := tx.ExecContext(ctx, updateProcessing, string(models.PaymentProcessing), channel, trxID, phone, now, sessionID); err != nil {
+		return nil, false, fmt.Errorf("update session to processing: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("commit session processing: %w", err)
+	}
+
+	s.Status = models.PaymentProcessing
+	s.Channel = channel
+	s.TransactionID = trxID
+	s.CustomerPhone = phone
+	return &s, false, nil
+}
+
+// AtomicReconcileIncomingSMS processes an incoming operator SMS from an Android bridge device atomically.
+// If a matching pending session is found, it updates the session to verified and enqueues a webhook in the same transaction.
+// If no matching session is waiting, it buffers the SMS into mfs_unmatched_inbox with a 30m TTL.
+func (db *DB) AtomicReconcileIncomingSMS(
+	ctx context.Context, tenantID, deviceID, channel, senderShortcode, trxID string,
+	amountMinor int64, senderPhone, rawSMS string,
+) (*models.PaymentSession, bool, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("begin sms tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC()
+
+	// 1. Search and lock any pending/processing payment session waiting for this SMS
+	findSession := `SELECT id, external_reference_id, amount_minor, currency
+		FROM payment_sessions 
+		WHERE tenant_id = ? AND channel = ? AND amount_minor = ? AND (transaction_id = ? OR transaction_id IS NULL) 
+		  AND status IN ('pending', 'processing') AND expires_at > ?
+		ORDER BY created_at DESC LIMIT 1`
+	if db.Dialect == "postgres" {
+		findSession = `SELECT id, external_reference_id, amount_minor, currency
+			FROM payment_sessions 
+			WHERE tenant_id = $1 AND channel = $2 AND amount_minor = $3 AND (transaction_id = $4 OR transaction_id IS NULL) 
+			  AND status IN ('pending', 'processing') AND expires_at > $5
+			ORDER BY created_at DESC LIMIT 1 FOR UPDATE`
+	}
+
+	var sessionID, extRef, currency string
+	var sessionAmount int64
+	err = tx.QueryRowContext(ctx, findSession, tenantID, channel, amountMinor, trxID, now).Scan(&sessionID, &extRef, &sessionAmount, &currency)
+	if err == nil {
+		// Session matched! Update to verified
+		updateSession := `UPDATE payment_sessions SET status = ?, channel = ?, transaction_id = ?, customer_phone = ?, verified_at = ?, updated_at = ? WHERE id = ?`
+		if db.Dialect == "postgres" {
+			updateSession = `UPDATE payment_sessions SET status = $1, channel = $2, transaction_id = $3, customer_phone = $4, verified_at = $5, updated_at = $6 WHERE id = $7`
+		}
+		if _, err := tx.ExecContext(ctx, updateSession, string(models.PaymentVerified), channel, trxID, senderPhone, now, now, sessionID); err != nil {
+			return nil, false, fmt.Errorf("update session to verified: %w", err)
+		}
+
+		// Enqueue outbox webhook event in the SAME transaction
+		webhookPayload, _ := json.Marshal(map[string]any{
+			"event":                 "payment.verified",
+			"session_id":            sessionID,
+			"external_reference_id": extRef,
+			"amount_minor":          sessionAmount,
+			"currency":              currency,
+			"channel":               channel,
+			"transaction_id":        trxID,
+			"customer_phone":        senderPhone,
+			"verified_at":           now,
+		})
+
+		jobID := GenerateUUID()
+		insertJob := `INSERT INTO outbox_jobs (id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, created_at, updated_at)
+			VALUES (?, ?, 'webhook', ?, 'pending', 0, 6, ?, ?, ?)`
+		if db.Dialect == "postgres" {
+			insertJob = `INSERT INTO outbox_jobs (id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, created_at, updated_at)
+				VALUES ($1, $2, 'webhook', $3, 'pending', 0, 6, $4, $5, $6)`
+		}
+		if _, err := tx.ExecContext(ctx, insertJob, jobID, tenantID, string(webhookPayload), now, now, now); err != nil {
+			return nil, false, fmt.Errorf("enqueue outbox job: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return nil, false, fmt.Errorf("commit match tx: %w", err)
+		}
+
+		matchedSession := &models.PaymentSession{
+			ID:                  sessionID,
+			TenantID:            tenantID,
+			ExternalReferenceID: extRef,
+			AmountMinor:         sessionAmount,
+			Currency:            currency,
+			Status:              models.PaymentVerified,
+			Channel:             channel,
+			TransactionID:       trxID,
+			CustomerPhone:       senderPhone,
+			VerifiedAt:          &now,
+		}
+		return matchedSession, true, nil
+	}
+
+	// 2. No matching session waiting: buffer SMS into mfs_unmatched_inbox with 30m TTL
+	unmatchedID := GenerateUUID()
+	expiresAt := now.Add(30 * time.Minute)
+	insertInbox := `INSERT INTO mfs_unmatched_inbox (
+		id, tenant_id, device_id, channel, sender_shortcode, transaction_id, amount_minor, sender_phone, raw_sms_body, status, expires_at, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unmatched', ?, ?)`
+	if db.Dialect == "postgres" {
+		insertInbox = `INSERT INTO mfs_unmatched_inbox (
+			id, tenant_id, device_id, channel, sender_shortcode, transaction_id, amount_minor, sender_phone, raw_sms_body, status, expires_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'unmatched', $10, $11)`
+	}
+
+	if _, err := tx.ExecContext(ctx, insertInbox,
+		unmatchedID, tenantID, deviceID, channel, senderShortcode, trxID, amountMinor, senderPhone, rawSMS, expiresAt, now,
+	); err != nil {
+		return nil, false, fmt.Errorf("buffer unmatched sms: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("commit buffer tx: %w", err)
+	}
+
+	return nil, false, nil
+}
+
+// FetchDeadLetterJobs returns all failed jobs in dead_letter status for administrative inspection.
+func (db *DB) FetchDeadLetterJobs(ctx context.Context, tenantID string, limit int) ([]*models.OutboxJob, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := `SELECT id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, last_error, created_at, updated_at
+		FROM outbox_jobs WHERE tenant_id = ? AND status = 'dead_letter' ORDER BY updated_at DESC LIMIT ?`
+	if db.Dialect == "postgres" {
+		query = `SELECT id, tenant_id, job_type, payload, status, attempts, max_attempts, next_run_at, last_error, created_at, updated_at
+			FROM outbox_jobs WHERE tenant_id = $1 AND status = 'dead_letter' ORDER BY updated_at DESC LIMIT $2`
+	}
+
+	rows, err := db.QueryContext(ctx, query, tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query dead letter jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []*models.OutboxJob
+	for rows.Next() {
+		var j models.OutboxJob
+		var payloadStr string
+		var lastErr sql.NullString
+		var nextRun, createdAt, updatedAt ScannableTime
+
+		if err := rows.Scan(
+			&j.ID, &j.TenantID, &j.JobType, &payloadStr, &j.Status, &j.Attempts,
+			&j.MaxAttempts, &nextRun, &lastErr, &createdAt, &updatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan dead letter job: %w", err)
+		}
+		j.Payload = []byte(payloadStr)
+		j.NextRunAt = nextRun.Time
+		j.CreatedAt = createdAt.Time
+		j.UpdatedAt = updatedAt.Time
+		if lastErr.Valid {
+			j.LastError = &lastErr.String
+		}
+		jobs = append(jobs, &j)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dead letter rows: %w", err)
+	}
+	return jobs, nil
+}
+
+// RetryDeadLetterJob resets a dead-letter job back to pending status for immediate retry.
+func (db *DB) RetryDeadLetterJob(ctx context.Context, tenantID, jobID string) error {
+	now := time.Now().UTC()
+	query := `UPDATE outbox_jobs SET status = 'pending', attempts = 0, next_run_at = ?, updated_at = ?
+		WHERE id = ? AND tenant_id = ? AND status = 'dead_letter'`
+	if db.Dialect == "postgres" {
+		query = `UPDATE outbox_jobs SET status = 'pending', attempts = 0, next_run_at = $1, updated_at = $2
+			WHERE id = $3 AND tenant_id = $4 AND status = 'dead_letter'`
+	}
+
+	res, err := db.ExecContext(ctx, query, now, now, jobID, tenantID)
+	if err != nil {
+		return fmt.Errorf("retry dead letter job: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

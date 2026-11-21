@@ -170,54 +170,28 @@ func (s *Server) handleVerifyPaymentSession(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Two-Way Asynchronous Reconciliation Branch:
-	// Check if matching SMS has already arrived and is buffered in mfs_unmatched_inbox
-	unmatchedSMS, err := s.Store.FindMatchingUnmatchedSMS(r.Context(), tenant.ID, cleanChannel, cleanTrxID, session.AmountMinor)
-	if err == nil && unmatchedSMS != nil {
-		// INSTANT MATCH FOUND: Transition session directly to verified!
-		now := time.Now().UTC()
-		if err := s.Store.UpdatePaymentSessionStatus(r.Context(), session.ID, models.PaymentVerified, cleanChannel, cleanTrxID, cleanPhone, &now); err != nil {
-			writeError(w, http.StatusInternalServerError, "update_error", "Failed to confirm payment status")
-			return
-		}
+	// Atomic reconciliation branch:
+	// Concurrently locks session and buffered SMS in a single SQL transaction.
+	updatedSession, matched, err := s.Store.AtomicReconcileCustomerTrxID(r.Context(), tenant.ID, session.ID, cleanChannel, cleanTrxID, cleanPhone)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reconcile_error", "Failed to reconcile transaction: "+err.Error())
+		return
+	}
 
-		_ = s.Store.MarkUnmatchedSMSMatched(r.Context(), unmatchedSMS.ID, session.ID)
-
-		// Enqueue Webhook Notification into Outbox
-		webhookPayload, _ := json.Marshal(map[string]any{
-			"event":                 "payment.verified",
-			"session_id":            session.ID,
-			"external_reference_id": session.ExternalReferenceID,
-			"amount_minor":          session.AmountMinor,
-			"currency":              session.Currency,
-			"channel":               cleanChannel,
-			"transaction_id":        cleanTrxID,
-			"customer_phone":        cleanPhone,
-			"verified_at":           now,
-		})
-
-		_ = s.Store.EnqueueOutboxJob(r.Context(), &models.OutboxJob{
-			TenantID: tenant.ID,
-			JobType:  "webhook",
-			Payload:  webhookPayload,
-		})
-
+	if matched {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":         "verified",
-			"session_id":     session.ID,
+			"session_id":     updatedSession.ID,
 			"transaction_id": cleanTrxID,
-			"verified_at":    now,
+			"verified_at":    updatedSession.VerifiedAt,
 			"matched_source": "inbox_buffer",
 		})
 		return
 	}
 
-	// NO MATCH YET: Move session to 'processing' awaiting the incoming Android SIM SMS
-	_ = s.Store.UpdatePaymentSessionStatus(r.Context(), session.ID, models.PaymentProcessing, cleanChannel, cleanTrxID, cleanPhone, nil)
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "processing",
-		"session_id":     session.ID,
+		"session_id":     updatedSession.ID,
 		"transaction_id": cleanTrxID,
 		"message":        "Transaction submitted. Awaiting automated telco verification.",
 	})

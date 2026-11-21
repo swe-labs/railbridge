@@ -62,8 +62,28 @@ func (s *Server) TenantAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// Enforce tenant token-bucket rate limiting (RPM)
+		if s.RateLimiter != nil && !s.RateLimiter.AllowTenant(tenant.ID, tenant.RateLimitRPM) {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Tenant request quota exceeded")
+			return
+		}
+
 		ctx := context.WithValue(r.Context(), tenantContextKey, tenant)
 		next(w, r.WithContext(ctx))
+	}
+}
+
+// PublicRateLimitMiddleware limits unauthenticated endpoints by caller IP address.
+func (s *Server) PublicRateLimitMiddleware(rpm int, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.RateLimiter != nil {
+			clientIP := ExtractClientIP(r)
+			if !s.RateLimiter.AllowIP(clientIP, rpm) {
+				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many requests from client IP")
+				return
+			}
+		}
+		next(w, r)
 	}
 }
 

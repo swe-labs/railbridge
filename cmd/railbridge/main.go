@@ -109,6 +109,7 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		slog.Error("HTTP graceful shutdown error", "error", err)
 	}
+	server.Close()
 
 	slog.Info("Railbridge process halted cleanly.")
 }
