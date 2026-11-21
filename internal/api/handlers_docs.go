@@ -14,6 +14,9 @@ var docsHTML []byte
 //go:embed datastar.js
 var datastarJS []byte
 
+//go:embed prism.js
+var prismJS []byte
+
 // handleDocs renders the interactive documentation and Datastar console.
 func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -27,6 +30,14 @@ func (s *Server) handleDatastarScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(datastarJS)
+}
+
+// handlePrismScript serves the embedded, zero-CDN Prism.js bundle with Go, Bash, JSON, and SQL syntax support.
+func (s *Server) handlePrismScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(prismJS)
 }
 
 type TelemetryEvent struct {

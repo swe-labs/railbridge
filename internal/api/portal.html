@@ -84,7 +84,23 @@
     footer { border-top: 1px solid var(--border); padding: 2.5rem 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
     footer a { color: #38bdf8; text-decoration: none; }
     footer a:hover { text-decoration: underline; }
+
+    /* Tokyo Night Syntax Highlighting Tokens */
+    pre code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #64748b; font-style: italic; }
+    .token.punctuation { color: #94a3b8; }
+    .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #fbbf24; }
+    .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #34d399; }
+    .token.operator, .token.entity, .token.url { color: #a78bfa; }
+    .token.atrule, .token.attr-value, .token.keyword { color: #38bdf8; font-weight: 600; }
+    .token.function, .token.class-name { color: #60a5fa; }
+    .token.regex, .token.important, .token.variable { color: #f472b6; }
   </style>
+  <script src="/static/prism.js"></script>
 </head>
 <body>
   <nav>
@@ -199,7 +215,7 @@
           <button class="copy-code-btn" onclick="copySnippet()">Copy Snippet</button>
         </div>
         <div class="code-body" id="code-content">
-          <pre id="code-text"></pre>
+          <pre><code id="code-text" class="language-bash"></code></pre>
         </div>
       </div>
     </section>
@@ -270,9 +286,14 @@ func main() {
       currentTab = tab;
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       event.target.classList.add('active');
-      document.getElementById('code-text').textContent = snippets[tab];
+      const codeEl = document.getElementById('code-text');
+      codeEl.className = tab === 'go-sdk' ? 'language-go' : 'language-bash';
+      codeEl.textContent = snippets[tab];
+      if (window.Prism) { Prism.highlightElement(codeEl); }
     }
-    document.getElementById('code-text').textContent = snippets['payments'];
+    const initCode = document.getElementById('code-text');
+    initCode.textContent = snippets['payments'];
+    if (window.Prism) { Prism.highlightElement(initCode); }
 
     function copySnippet() {
       navigator.clipboard.writeText(snippets[currentTab]);

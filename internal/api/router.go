@@ -76,6 +76,7 @@ func (s *Server) registerRoutes() {
 	s.Mux.HandleFunc("GET /docs", s.handleDocs)
 	s.Mux.HandleFunc("GET /docs/events", s.handleDocsEvents)
 	s.Mux.HandleFunc("GET /static/datastar.js", s.handleDatastarScript)
+	s.Mux.HandleFunc("GET /static/prism.js", s.handlePrismScript)
 
 	// Probes (Liveness and Database Readiness)
 	s.Mux.HandleFunc("GET /healthz", s.handleHealthz)

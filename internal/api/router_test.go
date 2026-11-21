@@ -107,4 +107,16 @@ func TestAPI_HealthAndReady(t *testing.T) {
 	if ct := rrJS.Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
 		t.Errorf("expected JS Content-Type for /static/datastar.js, got %s", ct)
 	}
+
+	// 6. Test /static/prism.js
+	reqPrism := httptest.NewRequest(http.MethodGet, "/static/prism.js", nil)
+	rrPrism := httptest.NewRecorder()
+	handler.ServeHTTP(rrPrism, reqPrism)
+
+	if rrPrism.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /static/prism.js, got %d", rrPrism.Code)
+	}
+	if ct := rrPrism.Header().Get("Content-Type"); ct != "application/javascript; charset=utf-8" {
+		t.Errorf("expected JS Content-Type for /static/prism.js, got %s", ct)
+	}
 }

@@ -6,6 +6,7 @@
   <title>Railbridge Documentation &amp; Live Console</title>
   <meta name="description" content="World-class documentation and real-time interactive console for Railbridge, powered by Datastar hypermedia.">
   <script type="module" src="/static/datastar.js"></script>
+  <script src="/static/prism.js"></script>
   <style>
     :root {
       --bg: #070b12;
@@ -63,9 +64,19 @@
     .callout-warning { background: rgba(245, 158, 11, 0.08); border-left-color: #f59e0b; }
 
     /* Code Blocks */
-    pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; overflow-x: auto; font-family: "JetBrains Mono", Consolas, monospace; font-size: 0.875rem; line-height: 1.6; margin: 1rem 0 1.5rem; color: #f8fafc; }
-    code { font-family: "JetBrains Mono", Consolas, monospace; background: rgba(255, 255, 255, 0.06); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85em; color: #38bdf8; }
-    pre code { background: transparent; padding: 0; color: inherit; }
+    pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.875rem; line-height: 1.6; margin: 1rem 0 1.5rem; color: #f8fafc; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(255, 255, 255, 0.06); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85em; color: #38bdf8; }
+    pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+
+    /* Tokyo Night Syntax Highlighting Tokens */
+    .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #64748b; font-style: italic; }
+    .token.punctuation { color: #94a3b8; }
+    .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #fbbf24; }
+    .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #34d399; }
+    .token.operator, .token.entity, .token.url { color: #a78bfa; }
+    .token.atrule, .token.attr-value, .token.keyword { color: #38bdf8; font-weight: 600; }
+    .token.function, .token.class-name { color: #60a5fa; }
+    .token.regex, .token.important, .token.variable { color: #f472b6; }
 
     /* Live Interactive Console Card */
     .console-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; margin: 2rem 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4); }
@@ -139,7 +150,7 @@
         <section id="quickstart" class="doc-section">
           <h2>60-Second Quickstart</h2>
           <p>Railbridge compiles into a single, zero-dependency static Go binary. Run locally in SQLite WAL sandbox mode:</p>
-          <pre><code># Run in local sandbox mode with automatic SQLite WAL migrations
+          <pre><code class="language-bash"># Run in local sandbox mode with automatic SQLite WAL migrations
 git clone https://github.com/swe-labs/railbridge.git
 cd railbridge
 go run ./cmd/railbridge -dev</code></pre>
@@ -155,9 +166,9 @@ go run ./cmd/railbridge -dev</code></pre>
         <section id="go-sdk" class="doc-section">
           <h2>Official Go Client SDK</h2>
           <p>Railbridge includes an idiomatic, production-grade Go SDK in package <code>pkg/railbridge</code>:</p>
-          <pre><code>go get github.com/swe-labs/railbridge/pkg/railbridge</code></pre>
+          <pre><code class="language-bash">go get github.com/swe-labs/railbridge/pkg/railbridge</code></pre>
           <h3>Example: Create Payment Session</h3>
-          <pre><code>package main
+          <pre><code class="language-go">package main
 
 import (
     "context"
@@ -187,7 +198,7 @@ func main() {
         <section id="mfs-rail" class="doc-section">
           <h2>MFS Payment Rail</h2>
           <p>The MFS rail automates bKash, Nagad, and Rocket verification. When a customer sends funds via Send Money, the Android SIM bridge detects the carrier SMS and matches it against the session.</p>
-          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/payments/sessions \
+          <pre><code class="language-bash">curl -X POST https://railbridge.alwaysdata.net/v1/payments/sessions \
   -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ord_9921_init" \
@@ -204,7 +215,7 @@ func main() {
         <section id="sms-rail" class="doc-section">
           <h2>Transactional SMS Rail</h2>
           <p>Dispatches single or bulk SMS messages with dual-carrier resilience. Primary dispatch routes through Greenweb commercial gateway; if Greenweb returns errors or timeouts, the circuit breaker automatically switches to secondary Android SIM hardware.</p>
-          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/sms/messages \
+          <pre><code class="language-bash">curl -X POST https://railbridge.alwaysdata.net/v1/sms/messages \
   -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -217,7 +228,7 @@ func main() {
         <section id="email-rail" class="doc-section">
           <h2>Inbound Email Routing &amp; Aliases</h2>
           <p>Create on-the-fly email aliases for your custom domain (e.g., <code>support@swe-labs.com</code>) that route straight to personal Gmail accounts with Sender Rewriting Scheme (SRS) preservation.</p>
-          <pre><code>curl -X POST https://railbridge.alwaysdata.net/v1/emails/aliases \
+          <pre><code class="language-bash">curl -X POST https://railbridge.alwaysdata.net/v1/emails/aliases \
   -H "Authorization: Bearer rb_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -231,10 +242,10 @@ func main() {
           <h2>Outbox Engine &amp; Dead-Letter Queue (DLQ)</h2>
           <p>Webhooks are committed in the same database transaction as payment mutations. Retries execute with jittered exponential backoff ($1\text{s}, 2\text{s}, 4\text{s}, 8\text{s}, 16\text{s}, 32\text{s}$). After 6 failed attempts, jobs transition to <code>dead_letter</code> status.</p>
           <h3>Inspect Dead-Letter Queue</h3>
-          <pre><code>curl -s -H "Authorization: Bearer rb_live_YOUR_KEY" \
+          <pre><code class="language-bash">curl -s -H "Authorization: Bearer rb_live_YOUR_KEY" \
   https://railbridge.alwaysdata.net/v1/admin/outbox/dead-letter</code></pre>
           <h3>Retry Dead-Letter Job</h3>
-          <pre><code>curl -s -X POST -H "Authorization: Bearer rb_live_YOUR_KEY" \
+          <pre><code class="language-bash">curl -s -X POST -H "Authorization: Bearer rb_live_YOUR_KEY" \
   https://railbridge.alwaysdata.net/v1/admin/outbox/dead-letter/{job_id}/retry</code></pre>
         </section>
 
@@ -265,7 +276,7 @@ func main() {
               <textarea id="console-payload" rows="3" style="width: 100%; font-family: monospace; font-size: 0.85rem;" placeholder="JSON Payload"></textarea>
             </div>
 
-            <div class="console-output-box" id="console-response">Click "Send Request" to test endpoint...</div>
+            <div class="console-output-box"><pre style="margin:0;padding:0;background:transparent;border:none;"><code id="console-response" class="language-json">// Click "Send Request" to test endpoint live...</code></pre></div>
           </div>
         </section>
 
@@ -336,8 +347,7 @@ func main() {
 
       btn.disabled = true;
       btn.innerText = "Running...";
-      out.style.color = '#94a3b8';
-      out.innerText = "Sending HTTP request to " + url + "...";
+      out.textContent = "// Sending HTTP request to " + url + "...";
 
       const start = performance.now();
       try {
@@ -359,11 +369,10 @@ func main() {
         const duration = Math.round(performance.now() - start);
         const data = await res.json();
 
-        out.style.color = res.ok ? '#34d399' : '#f87171';
-        out.innerText = "// HTTP " + res.status + " " + res.statusText + " (" + duration + " ms)\n" + JSON.stringify(data, null, 2);
+        out.textContent = "// HTTP " + res.status + " " + res.statusText + " (" + duration + " ms)\n" + JSON.stringify(data, null, 2);
+        if (window.Prism) { Prism.highlightElement(out); }
       } catch (err) {
-        out.style.color = '#ef4444';
-        out.innerText = "// Network error:\n" + err.message;
+        out.textContent = "// Network error:\n" + err.message;
       } finally {
         btn.disabled = false;
         btn.innerText = "Send Request";
