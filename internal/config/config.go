@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -81,8 +82,9 @@ func Load() (*Config, error) {
 }
 
 // Address returns the TCP network address formatted for net.Listen.
+// Uses net.JoinHostPort to safely support both IPv4 and Alwaysdata's IPv6 interfaces.
 func (c *Config) Address() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 func getEnv(key, fallback string) string {

@@ -138,7 +138,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 			return fmt.Errorf("begin migration tx: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx, string(content)); err != nil {
+		migrationSQL := string(content)
+		if db.Dialect == "postgres" {
+			migrationSQL = strings.ReplaceAll(migrationSQL, " BLOB", " BYTEA")
+		}
+
+		if _, err := tx.ExecContext(ctx, migrationSQL); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("execute migration %s: %w", filename, err)
 		}
